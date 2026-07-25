@@ -1,0 +1,15 @@
+# Build
+/build/
+
+# Temporary editor files
+*~
+*.swp
+*.swo
+
+# IDEs
+.vscode/
+.idea/
+
+# Operating system
+.DS_Store
+Thumbs.db

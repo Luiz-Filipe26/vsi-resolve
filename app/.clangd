@@ -1,0 +1,4 @@
+CompileFlags:
+  Add:
+    - "--target=wasm64"
+    - "-I../sdk/include"

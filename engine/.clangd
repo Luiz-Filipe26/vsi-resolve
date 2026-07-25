@@ -1,0 +1,6 @@
+CompileFlags:
+  Add:
+    - "-std=c++17"
+    - "-I../sdk/include"
+    - "-I../engine"
+    - "-I../build"

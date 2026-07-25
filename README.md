@@ -17,3 +17,7 @@ A VSI function is not a system call from any specific operating system. It is a 
 ## Status
 
 The project is in its early stages. A working proof of concept already validates the complete pipeline (build → install) for one domain (audio). The remaining VSI modules are still under design.
+
+## Learn More
+
+The complete technical specification, including the architecture, design decisions, and roadmap, is available in [SPEC.md](./SPEC.md).

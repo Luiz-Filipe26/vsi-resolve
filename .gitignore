@@ -1,15 +1,33 @@
-# Build
-/build/
+# ==============================================================================
+# Build & Distribution Outputs
+# ==============================================================================
+# Ignores all build and dist directories across the repository
+# (e.g., /dist/, /engine/dist/, /engine/build/, /example-app/build/)
+build/
+**/build/
+dist/
+**/dist/
 
-# Temporary editor files
+# ==============================================================================
+# C/C++ Tooling & Language Server Artifacts
+# ==============================================================================
+.cache/
+compile_commands.json
+CMakeUserPresets.json
+
+# ==============================================================================
+# Editor & IDE Directories
+# ==============================================================================
+.vscode/
+.idea/
+
+# Temporary / Swap files
 *~
 *.swp
 *.swo
 
-# IDEs
-.vscode/
-.idea/
-
-# Operating system
+# ==============================================================================
+# Operating System Artifacts
+# ==============================================================================
 .DS_Store
 Thumbs.db

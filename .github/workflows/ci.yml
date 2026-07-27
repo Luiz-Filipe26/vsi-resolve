@@ -1,0 +1,47 @@
+name: CI Build & Release Package
+
+on: [push, pull_request]
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # STEP 1: Restore downloaded dependencies cache (_deps) on host filesystem
+      - name: Cache CMake FetchContent Dependencies
+        uses: actions/cache@v4
+        with:
+          path: engine/build/_deps
+          key: ${{ runner.os }}-deps-${{ hashFiles('engine/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      # STEP 2: Build the environment Docker image
+      - name: Build Toolchain Environment Image
+        run: |
+          docker build -t vsi-builder:ci -f Dockerfile .
+
+      # STEP 3: Execute build inside container using host bind mount
+      - name: Compile and Package Toolchain
+        run: |
+          mkdir -p dist
+          docker run --rm \
+            -v "$(pwd):/app" \
+            -w /app \
+            vsi-builder:ci \
+            bash -c "
+              cmake -B engine/build -S engine -G Ninja -DCMAKE_BUILD_TYPE=Release && \
+              cmake --build engine/build --parallel && \
+              cmake --install engine/build --prefix engine/dist && \
+              tar -czf /app/dist/vsi-toolchain-linux-x86_64.tar.gz -C /app/engine/dist .
+            "
+
+      # STEP 4: Upload release package artifact
+      - name: Upload Toolchain Package Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vsi-toolchain-linux-x86_64
+          path: dist/vsi-toolchain-linux-x86_64.tar.gz
+          retention-days: 7

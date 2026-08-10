@@ -1,0 +1,1 @@
+# macOS Host Platform Configuration

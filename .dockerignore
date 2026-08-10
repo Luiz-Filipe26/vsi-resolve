@@ -1,8 +1,0 @@
-.git
-.github
-engine/build
-engine/dist
-example-app/build
-dist
-*.tar.gz
-*.zip

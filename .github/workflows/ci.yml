@@ -3,45 +3,79 @@ name: CI Build & Release Package
 on: workflow_dispatch
 
 jobs:
-  build-release:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+    build-release:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout Code
+              uses: actions/checkout@v4
 
-      # STEP 1: Restore downloaded dependencies cache (_deps) on host filesystem
-      - name: Cache CMake FetchContent Dependencies
-        uses: actions/cache@v4
-        with:
-          path: engine/build/_deps
-          key: ${{ runner.os }}-deps-${{ hashFiles('engine/CMakeLists.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-deps-
+            # STEP 1: Restore host build dependencies cache (_deps)
+            - name: Cache Host CMake Dependencies
+              uses: actions/cache@v4
+              with:
+                  path: host/build/_deps
+                  key: ${{ runner.os }}-host-deps-${{ hashFiles('host/CMakeLists.txt') }}
+                  restore-keys: |
+                      ${{ runner.os }}-host-deps-
 
-      # STEP 2: Build the environment Docker image
-      - name: Build Toolchain Environment Image
-        run: |
-          docker build -t vsi-builder:ci -f Dockerfile .
+            # STEP 2: Restore VSIR toolchain dependencies cache (_deps)
+            - name: Cache VSIR CMake Dependencies
+              uses: actions/cache@v4
+              with:
+                  path: tools/vsir/common_desktop/build/_deps
+                  key: ${{ runner.os }}-vsir-deps-${{ hashFiles('tools/vsir/common_desktop/CMakeLists.txt') }}
+                  restore-keys: |
+                      ${{ runner.os }}-vsir-deps-
 
-      # STEP 3: Execute build inside container using host bind mount
-      - name: Compile and Package Toolchain
-        run: |
-          mkdir -p dist
-          docker run --rm \
-            -v "$(pwd):/app" \
-            -w /app \
-            vsi-builder:ci \
-            bash -c "
-              cmake -B engine/build -S engine -G Ninja -DCMAKE_BUILD_TYPE=Release && \
-              cmake --build engine/build --parallel && \
-              cmake --install engine/build --prefix engine/dist && \
-              tar -czf /app/dist/vsi-toolchain-linux-x86_64.tar.gz -C /app/engine/dist .
-            "
+            # STEP 3: Build isolated Docker images
+            - name: Build Host Builder Image
+              run: |
+                  docker build -t vsi-host-builder:ci -f host/Dockerfile host/
 
-      # STEP 4: Upload release package artifact
-      - name: Upload Toolchain Package Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: vsi-toolchain-linux-x86_64
-          path: dist/vsi-toolchain-linux-x86_64.tar.gz
-          retention-days: 7
+            - name: Build VSIR Builder Image
+              run: |
+                  docker build -t vsir-builder:ci -f tools/vsir/common_desktop/Dockerfile tools/vsir/common_desktop/
+
+            # STEP 4: Compile Host static library inside container
+            - name: Compile Host Library
+              run: |
+                  mkdir -p host/dist
+                  docker run --rm \
+                    -v "$(pwd):/app" \
+                    -w /app/host \
+                    vsi-host-builder:ci \
+                    bash -c "
+                      cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release && \
+                      cmake --build build --parallel && \
+                      cmake --install build --prefix dist
+                    "
+
+            # STEP 5: Compile VSIR driver and toolchain inside container
+            - name: Compile VSIR Toolchain
+              run: |
+                  mkdir -p tools/vsir/common_desktop/dist
+                  docker run --rm \
+                    -v "$(pwd):/app" \
+                    -w /app/tools/vsir/common_desktop \
+                    vsir-builder:ci \
+                    bash -c "
+                      cmake -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release && \
+                      cmake --build build --parallel && \
+                      cmake --install build --prefix dist
+                    "
+
+            # STEP 6: Merge artifacts and create release tarball
+            - name: Package Release
+              run: |
+                  mkdir -p dist staging
+                  cp -r host/dist/* staging/
+                  cp -r tools/vsir/common_desktop/dist/* staging/
+                  tar -czf dist/vsi-toolchain-linux-x86_64.tar.gz -C staging .
+
+            # STEP 7: Upload release artifact
+            - name: Upload Toolchain Package Artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: vsi-toolchain-linux-x86_64
+                  path: dist/vsi-toolchain-linux-x86_64.tar.gz
+                  retention-days: 7

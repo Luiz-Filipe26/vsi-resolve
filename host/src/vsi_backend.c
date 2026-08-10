@@ -18,7 +18,6 @@ static size_t g_slots_capacity = 0;
 static size_t g_slots_count = 0;
 static pthread_mutex_t g_audio_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// Internal helper for consistent construction of vsi_audio_out_result_t
 static inline vsi_audio_out_result_t make_res(
     vsi_base_status_t base,
     vsi_audio_out_error_t code) {
@@ -28,7 +27,6 @@ static inline vsi_audio_out_result_t make_res(
     return res;
 }
 
-// Validates the handle and retrieves the corresponding slot in O(1)
 static AudioOutSlot* get_slot_locked(vsi_audio_out_handle_t handle) {
     uint64_t handle_val = (uint64_t)(uintptr_t)handle;
     if (handle_val == 0) return NULL;
@@ -40,7 +38,7 @@ static AudioOutSlot* get_slot_locked(vsi_audio_out_handle_t handle) {
 
     AudioOutSlot* slot = &g_slots[slot_idx];
     if (!slot->active || slot->generation != generation) {
-        return NULL;  // Invalid or closed (stale) handle
+        return NULL;
     }
 
     return slot;
@@ -68,26 +66,26 @@ vsi_audio_out_result_t vsi_audio_out_open(uint32_t sample_rate,
     } else if (format == VSI_AUDIO_OUT_FMT_F32) {
         spec.format = SDL_AUDIO_F32;
     } else {
+        SDL_QuitSubSystem(SDL_INIT_AUDIO);
         return make_res(VSI_ERROR_INVALID_ARG,
                         VSI_AUDIO_OUT_ERR_FORMAT_UNSUPPORTED);
     }
 
-    // Opens default playback device and binds an AudioStream in a single call
     SDL_AudioStream* stream = SDL_OpenAudioDeviceStream(
         SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
     if (!stream) {
+        SDL_QuitSubSystem(SDL_INIT_AUDIO);
         return make_res(VSI_MODULE_ERROR, VSI_AUDIO_OUT_ERR_DEVICE_FAILURE);
     }
 
-    // In SDL3, stream audio devices are paused by default upon creation
     if (!SDL_ResumeAudioStreamDevice(stream)) {
         SDL_DestroyAudioStream(stream);
+        SDL_QuitSubSystem(SDL_INIT_AUDIO);
         return make_res(VSI_MODULE_ERROR, VSI_AUDIO_OUT_ERR_DEVICE_FAILURE);
     }
 
     pthread_mutex_lock(&g_audio_mutex);
 
-    // Finds an inactive slot for reuse or allocates a new one
     uint32_t slot_idx = UINT32_MAX;
     for (size_t i = 0; i < g_slots_count; ++i) {
         if (!g_slots[i].active) {
@@ -104,6 +102,7 @@ vsi_audio_out_result_t vsi_audio_out_open(uint32_t sample_rate,
             if (!new_slots) {
                 pthread_mutex_unlock(&g_audio_mutex);
                 SDL_DestroyAudioStream(stream);
+                SDL_QuitSubSystem(SDL_INIT_AUDIO);
                 return make_res(VSI_ERROR_GENERIC, VSI_AUDIO_OUT_ERR_NONE);
             }
             g_slots = new_slots;
@@ -119,7 +118,6 @@ vsi_audio_out_result_t vsi_audio_out_open(uint32_t sample_rate,
     slot->active = true;
     slot->spec = spec;
 
-    // Packs [Generation (32 bits) | Index + 1 (32 bits)] inside the opaque handle pointer
     uint64_t handle_val =
         ((uint64_t)slot->generation << 32) | (uint64_t)(slot_idx + 1);
     *out_handle = (vsi_audio_out_handle_t)(uintptr_t)handle_val;
@@ -211,8 +209,11 @@ vsi_audio_out_result_t vsi_audio_out_close(vsi_audio_out_handle_t handle) {
     }
 
     slot->active = false;
-    slot->generation++;  // Increments generation so stale handles are immediately rejected
+    slot->generation++;
 
     pthread_mutex_unlock(&g_audio_mutex);
+
+    SDL_QuitSubSystem(SDL_INIT_AUDIO);
+
     return make_res(VSI_OK, VSI_AUDIO_OUT_ERR_NONE);
 }
